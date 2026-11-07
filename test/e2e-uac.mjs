@@ -58,8 +58,17 @@ if (expectCancel) {
 }
 
 const lines = (result.stdout || "").trim().split("\n").filter(Boolean);
-const incremental = chunks.length >= 3 && chunks[chunks.length - 1].at - chunks[0].at > 1500;
-const ok = result.status === "ok" && result.exitCode === 0 && lines.length >= 6 && /elevated=True/i.test(result.stdout) && incremental;
-console.log(`\nlines=${lines.length} incrementalStream=${incremental}`);
-console.log(ok ? "VERDICT: PASS (prompt worked, output streamed, exit code crossed)" : "VERDICT: FAIL");
+// Timestamps printed BY THE COMMAND, not by this process: they are what proves
+// the elevated window printed as it went. Chunk arrival times are a property of
+// the 150 ms poll and of how long the human took to accept the prompt, so a fast
+// command can legitimately arrive in a single chunk — that is not a failure.
+const stamps = [...(result.stdout || "").matchAll(/tick \d at (\d{2}):(\d{2}):(\d{2})\.(\d{3})/g)].map((m) =>
+  Number(m[1]) * 3_600_000 + Number(m[2]) * 60_000 + Number(m[3]) * 1_000 + Number(m[4]),
+);
+const lastTick = Math.max(...stamps);
+const firstTick = Math.min(...stamps);
+const spanned = stamps.length >= 5 && lastTick - firstTick > 3000;
+const ok = result.status === "ok" && result.exitCode === 0 && lines.length >= 6 && /elevated=True/i.test(result.stdout) && spanned;
+console.log(`\nlines=${lines.length} ticks=${stamps.length} commandSpannedMs=${lastTick - firstTick} chunks=${chunks.length} incrementalStream=${spanned}`);
+console.log(ok ? "VERDICT: PASS (prompt worked, command ran over time, exit code crossed)" : "VERDICT: FAIL");
 process.exit(ok ? 0 : 1);

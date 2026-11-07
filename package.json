@@ -22,7 +22,8 @@
   "scripts": {
     "test": "node test/run.mjs",
     "test:uac": "node test/uac-probe.mjs",
-    "test:uac-cancel": "node test/uac-probe.mjs --cancel"
+    "test:uac-cancel": "node test/uac-probe.mjs --cancel",
+    "test:uac-e2e": "node test/e2e-uac.mjs"
   },
   "dsh": {
     "bundle": {
