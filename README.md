@@ -4,8 +4,21 @@
 需要时还能弹 **UAC 提权**运行。目标不是"多一个工具"，而是让 agent 默认**输入命令**，
 而不是先写一个 `.ps1` 再运行。
 
-> 适用于 Windows。Linux/macOS 上插件会正常加载，但 `elevated` 会返回 `unsupported-platform`
+> 适用于 Windows。Linux/macOS 上插件会正常加载，但提权工具会返回 `unsupported-platform`
 >（UAC 是 Windows 独有的东西，没有假装支持的降级路径）。
+
+## 为什么工具叫 `psh` 而不是 `pwsh`
+
+**因为 DSH 自带一个叫 `pwsh` 的内置工具，而且撞名时内置的赢。** 这不是猜的，是在真机上验证出来的：
+
+- 插件用 `name: "pwsh"` 注册时，本插件的另外两个工具（`psh_kill` / `psh_status`）在运行时里
+  直接 `unknown tool`——说明插件整体没生效；
+- 而会话里的 `pwsh` **接受**了 `elevated: true` 却**静默忽略**它：命令以普通权限跑，
+  返回一个看起来像"权限不够"的普通报错，而不是"没提权"。
+
+这个失败模式很危险：一个本该提权的操作，看起来只是失败了。所以现在提权是**独立的工具**
+`psh_elevated`——它要么存在，要么不存在，不会退化。内置 `pwsh` 保持原样，两边不冲突。
+
 
 ## 为什么不是 MCP
 
@@ -17,9 +30,13 @@ MCP 的 stdio/HTTP 通道根本握不住它的输出。所以这里做成 DSH �
 
 | 工具 | 作用 |
 |---|---|
-| `pwsh` | **主工具**。`code` 里直接写 PowerShell（多行脚本也行），`elevated: true` 走 UAC。 |
-| `killElevatedPid` | 让一个提权进程自己退出（低权限进程杀不掉高权限进程，原因见下）。 |
-| `pwsh_elevate_status` | 当前是否已提权、用的哪个 shell、脚本块日志是否开着——**先问再断言**，别猜。 |
+| `psh` | **主工具**。`code` 里直接写 PowerShell（多行脚本也行）。普通权限，一次调用一个新进程。 |
+| `psh_elevated` | **提权工具**。弹 UAC 以管理员身份运行，输出边跑边流回来。用户取消（1223）如实报告，不重试。 |
+| `psh_kill` | 让一个提权进程自己退出（低权限进程杀不掉高权限进程，原因见下）。 |
+| `psh_status` | 当前是否已提权、用的哪个 shell、脚本块日志是否开着——**先问再断言**，别猜。 |
+
+> 内置的 `pwsh` 与本插件的 `psh` 是两回事：内置那个不支持提权。要管理员权限时用 `psh_elevated`。
+
 
 配置项（`cordis.patch.yml`）：
 
@@ -47,7 +64,7 @@ MCP 的 stdio/HTTP 通道根本握不住它的输出。所以这里做成 DSH �
 3. **提权进程的 stdout/stderr 过不了 ShellExecute 边界。** 落盘到每次运行独立的临时目录
    （`pid.txt` / `stdout.txt` / `stderr.txt` / `result.txt` / `done.txt`），父进程轮询信箱。
 4. **低权限进程终止不了高权限进程**（拿不到 `PROCESS_TERMINATE`，报 `Access is denied`）。
-   `killElevatedPid` 的绕法是让目标**自己**退出：用 `WScript.Shell` COM 起一个 PowerShell
+   `psh_kill` 的绕法是让目标**自己**退出：用 `WScript.Shell` COM 起一个 PowerShell
    去碰脚本块日志，日志钩子先于代码执行触发 → 提权进程按策略把自己杀掉。
    **这依赖 `ScriptBlockLogging` 开着**；没开就如实返回失败，并告诉你只能手动点 Terminate。
    用 COM 而不是再起一个 `powershell.exe`，是因为新起的那个也会进日志、可能被误杀。
