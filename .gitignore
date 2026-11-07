@@ -1,0 +1,7 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+# Elevation run directories the tests keep on failure
+dsh-powershell-elev-*/
+dshps-*/

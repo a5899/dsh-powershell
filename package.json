@@ -1,0 +1,57 @@
+{
+  "name": "dsh-powershell",
+  "version": "1.0.0",
+  "description": "DSH plugin: run PowerShell commands directly from the agent (inline code, no script files) with a UAC-elevated mode. Registers a pwsh tool and an always-on 'prefer commands over scripts' policy.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/runner.js",
+    "lib/elevate.js",
+    "lib/policy.js",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/run.mjs",
+    "test:uac": "node test/uac-probe.mjs",
+    "test:uac-cancel": "node test/uac-probe.mjs --cancel"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "os": [
+    "win32"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "powershell",
+    "pwsh",
+    "uac",
+    "elevation",
+    "windows"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/USERNAME/dsh-powershell.git"
+  },
+  "homepage": "https://github.com/USERNAME/dsh-powershell#readme",
+  "bugs": {
+    "url": "https://github.com/USERNAME/dsh-powershell/issues"
+  }
+}

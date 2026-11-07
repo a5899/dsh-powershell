@@ -1,0 +1,20 @@
+# dsh-powershell bundle layer.
+#
+# Registering the package in `dsh.profile.bundles` makes DSH require a
+# `dsh.bundle.patch`; this file declares the plugin's own loader entry so the
+# bundle installs and toggles like any other profile layer.
+#
+# `id` MUST be the package name (not a short form): dshmarket compares the row
+# id against this entry to decide whether a package is already managed by the
+# user's patch layer, and a mismatch makes it generate a duplicate shim.
+- insert:
+    - id: dsh-powershell
+      name: 'dsh-powershell'
+      config:
+        enabled: true
+        preferCommands: true
+        shell: auto
+        timeoutMs: 120000
+        maxOutputChars: 200000
+        elevateTimeoutMs: 300000
+        requireConfirmationForElevation: true
