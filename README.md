@@ -41,15 +41,17 @@ MCP 的 stdio/HTTP 通道根本握不住它的输出。所以这里做成 DSH �
 配置项（`cordis.patch.yml`）：
 
 ```yaml
-- id: dsh-powershell
-  name: 'dsh-powershell'
-  config:
-    enabled: true
-    preferCommands: true          # 往系统提示注入「命令行优先」策略
-    shell: auto                   # auto | powershell | pwsh
-    timeoutMs: 120000             # 普通命令超时
-    maxOutputChars: 200000        # 输出截断上限
-    elevateTimeoutMs: 300000      # 提权总预算（含等用户点 UAC 的时间）
+- insert:
+    - id: dsh-powershell
+      # 必须是相对路径，不能是裸包名 —— 理由见下方「装」一节
+      name: './node_modules/dsh-powershell/lib/index.js'
+      config:
+        enabled: true
+        preferCommands: true          # 往系统提示注入「命令行优先」策略
+        shell: auto                   # auto | powershell | pwsh
+        timeoutMs: 120000             # 普通命令超时
+        maxOutputChars: 200000        # 输出截断上限
+        elevateTimeoutMs: 300000      # 提权总预算（含等用户点 UAC 的时间）
 ```
 
 ## 设计上必须知道的四件事
@@ -78,14 +80,51 @@ New-Item -ItemType Junction -Path "$env:USERPROFILE\.dsh\profiles\desktop\node_m
 # 2. 加进 profile 的 bundles
 #    ~/.dsh/profiles/desktop/package.json -> dsh.profile.bundles 里加 "dsh-powershell"
 
-# 3. 重启 DSH
+# 3. 在 profile 的 cordis.patch.yml 末尾追加（注意 name 是相对路径！）
+#    - insert:
+#        - id: dsh-powershell
+#          name: './node_modules/dsh-powershell/lib/index.js'
+#          config: { enabled: true, preferCommands: true }
+
+# 4. 重启 DSH
 ```
+
+### ⚠️ `name` 必须是相对路径，写裸包名会被静默跳过
+
+这是本项目最贵的坑，值得单独说：
+
+```yaml
+name: 'dsh-powershell'                            # ❌ 冷启动解析不到，插件静默不加载
+name: './node_modules/dsh-powershell/lib/index.js'  # ✅
+```
+
+**冷启动时 loader 的解析基准还没定**，裸包名到不了 profile 的 `node_modules`，
+于是这条 patch 被跳过——**没有任何报错**。表现出来是：DSH 正常启动、GUI 正常打开、
+只是工具不在。而后端宿主进程根本没有控制台，加载期抛的错无处可去，日志里也查不到。
+
+`id` 则必须保持完整包名，因为 dshmarket 拿它跟包名比对来判断"这行是不是已被用户接管"。
+
+### 加载失败怎么查：`load.log`
+
+插件会在 `~/.dsh/plugins/dsh-powershell/load.log` 里逐行记录自己的加载进度：
+
+| 最后看到哪一行 | 说明 |
+|---|---|
+| 什么都没有 | **模块压根没被 import**——先查 patch 条目和 `name` 的写法 |
+| `import-evaluated` | 模块求值了，但 `apply()` 没被调用（查 patch 的 `config`/`id`） |
+| `apply-enter` | 进 `apply()` 了，问题在注册阶段 |
+| `register-failed <tool> <err>` | 注册抛异常了，错误信息在这行 |
+| `apply-done N disposers` | 全部正常，工具应该可用 |
+
+不要用"工具在不在"来判断插件是否工作——内置 `pwsh` 会顶替掉同名工具，让你误以为一切正常
+（见本文开头的改名说明）。
 
 ## 开发
 
 ```powershell
-node test/run.mjs              # 14 项集成测试（真跑 powershell，不打桩）
-node test/uac-probe.mjs        # 真 UAC：点「是」，应报 status=ok
+node test/run.mjs                  # 19 项集成测试（真跑 powershell，不打桩）
+node test/e2e-uac.mjs              # 真 UAC 端到端：点「是」，验证提权 + 边跑边出输出
+node test/uac-probe.mjs            # 真 UAC：点「是」，应报 status=ok
 node test/uac-probe.mjs --cancel   # 真 UAC：点「否」，应报 status=cancelled
 ```
 

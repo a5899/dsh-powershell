@@ -7,9 +7,17 @@
 # `id` MUST be the package name (not a short form): dshmarket compares the row
 # id against this entry to decide whether a package is already managed by the
 # user's patch layer, and a mismatch makes it generate a duplicate shim.
+#
+# `name` MUST be a relative path, NOT a bare package name. On a cold start the
+# loader's resolution base is not yet set, so a bare `'dsh-powershell'` cannot
+# resolve to the profile's node_modules and the plugin is SKIPPED SILENTLY —
+# the host boots, the GUI opens, the tools simply never appear, and there is no
+# error anywhere because the backend host has no console. `parsePatchList`
+# anchors a relative path to the directory holding this patch file, which is
+# why the working entries elsewhere in the profile use this exact form.
 - insert:
     - id: dsh-powershell
-      name: 'dsh-powershell'
+      name: './node_modules/dsh-powershell/lib/index.js'
       config:
         enabled: true
         preferCommands: true

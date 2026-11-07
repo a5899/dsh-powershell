@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.0.2 — 2026-11-07
+
+**安装踩坑：patch 条目必须用相对路径**
+
+- `cordis.patch.yml` 里 `- insert:` 的 `name` 如果写**裸包名**（`'dsh-powershell'`），
+  冷启动时 loader 的解析基准未定，到不了 profile 的 `node_modules`，插件被**静默跳过**：
+  进程正常起、GUI 正常开、工具就是不出现，没有任何报错。
+- 现在文档与模板统一写 `'./node_modules/dsh-powershell/lib/index.js'`
+  （相对路径由 `parsePatchList` 锚定到 patch 文件所在目录）。`id` 仍保持完整包名，
+  因为 dshmarket 靠它判断这行已被用户接管。
+- 同一条坑此前已在 omnissiah / session-delete 上踩过，patch 文件里有原注释记录。
+
+**新增：加载面包屑（load breadcrumbs）**
+
+- 模块加载与 `apply()` 的各阶段都会向 `~/.dsh/plugins/dsh-powershell/load.log`
+  追加一行：`import-evaluated` / `apply-enter` / `apply-skip` / `register-scan` /
+  `registered <tool>` / `register-failed <tool> <err>` / `policy` / `apply-done`。
+- 存在的理由：DSH 后端宿主没有控制台，插件加载期抛异常**无处可去**。
+  没有这个文件，唯一能观察到的是"工具不在"，而它无法区分
+  "压根没加载" / "加载了但抛了" / "加载了但注册错位"三种情况。
+- 面包屑永不抛出（整个写入包在 try/catch 里），不会自己成为加载失败的原因。
+
 ## 1.0.1 — 2026-11-07
 
 **修复 / 破坏性改名**
