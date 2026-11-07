@@ -145,11 +145,15 @@ await test("elevated host records pid, result and done even when run unelevated"
       `& ${quote(join(dir, "elevated.ps1"))} -RunDir ${quote(dir)} -CodePath ${quote(join(dir, "code.ps1"))} -WorkDir ${quote(dir)}`,
       { timeoutMs: 90_000 },
     );
-    assert.equal(r.exitCode, 0, r.stderr);
+    // The host's process code now mirrors result.txt, so this must be read from
+    // the mailbox rather than assumed to be 0: that is what the elevated caller
+    // does (it never sees the host's exit status, only the files).
+    const doneBefore = existsSync(join(dir, "done.txt"));
+    assert.ok(doneBefore, "done.txt missing — host exited before closing the mailbox: " + (r.stderr || r.stdout));
     assert.ok(existsSync(join(dir, "pid.txt")), "pid.txt missing");
-    assert.ok(existsSync(join(dir, "done.txt")), "done.txt missing");
     assert.equal(readFileSync(join(dir, "result.txt"), "utf8").trim(), "0");
     assert.match(readFileSync(join(dir, "stdout.txt"), "utf8"), /from-host/);
+    assert.equal(r.exitCode, 0, "host process code must agree with result.txt");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -169,6 +173,60 @@ await test("elevated host reports a parse-heavy but valid script's output", asyn
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+await test("elevated host closes the mailbox when the code ends with exit", async () => {
+  // Regression: for a while a code block ending in `exit 0` produced complete
+  // output, exit code 0, and NO result.txt/done.txt — the caller then waited the
+  // whole timeout and reported failure. It reproduced unelevated, so it is
+  // pinned here: both the reported code and the commit point must survive exit.
+  const dir = mkdtempSync(join(tmpdir(), "dshps-host3-"));
+  try {
+    writeFileSync(join(dir, "code.ps1"), "Write-Output 'before exit'\nexit 3", "utf8");
+    writeFileSync(join(dir, "elevated.ps1"), ELEVATED_SCRIPT, "utf8");
+    const r = await runUnelevated(
+      `& ${quote(join(dir, "elevated.ps1"))} -RunDir ${quote(dir)} -CodePath ${quote(join(dir, "code.ps1"))}`,
+      { timeoutMs: 90_000 },
+    );
+    assert.ok(existsSync(join(dir, "done.txt")), "done.txt missing: the host was killed by the user's exit");
+    assert.equal(readFileSync(join(dir, "result.txt"), "utf8").trim(), "3");
+    assert.match(readFileSync(join(dir, "stdout.txt"), "utf8"), /before exit/);
+    // The host resets $LASTEXITCODE to 0 before returning so that its own
+    // process code cannot be confused with the recorded one; the mailbox is the
+    // contract the elevated caller reads, so result.txt is what must hold 3.
+    assert.equal(existsSync(join(dir, "done.txt")), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await test("elevated host keeps variables across statements and reports cmd's exit code", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "dshps-host4-"));
+  try {
+    writeFileSync(join(dir, "code.ps1"), "$a = 41\n\"value=$($a + 1)\"\ncmd /c exit 7", "utf8");
+    writeFileSync(join(dir, "elevated.ps1"), ELEVATED_SCRIPT, "utf8");
+    const r = await runUnelevated(
+      `& ${quote(join(dir, "elevated.ps1"))} -RunDir ${quote(dir)} -CodePath ${quote(join(dir, "code.ps1"))}`,
+      { timeoutMs: 90_000 },
+    );
+    assert.match(readFileSync(join(dir, "stdout.txt"), "utf8"), /value=42/);
+    assert.equal(readFileSync(join(dir, "result.txt"), "utf8").trim(), "7");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await test("unelevated run reports cmd's real exit code (5, not 1)", async () => {
+  // PowerShell 5.1 collapses any nonzero $LASTEXITCODE to process code 1 unless
+  // the script re-exits explicitly. Verified on this machine: a bare
+  // `cmd /c exit 5` gives 1, so the runner must propagate the real number.
+  const r = await runUnelevated("cmd /c exit 5", { timeoutMs: 30_000 });
+  assert.equal(r.exitCode, 5, "expected the real code from cmd, got " + r.exitCode);
+});
+
+await test("unelevated run honours an explicit trailing exit over $LASTEXITCODE", async () => {
+  const r = await runUnelevated("cmd /c exit 5\nexit 0", { timeoutMs: 30_000 });
+  assert.equal(r.exitCode, 0);
 });
 
 // ── UAC (manual) ──────────────────────────────────────────────────────────
