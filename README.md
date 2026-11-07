@@ -111,7 +111,7 @@ name: './node_modules/dsh-powershell/lib/index.js'  # ✅
 | 最后看到哪一行 | 说明 |
 |---|---|
 | 什么都没有 | **模块压根没被 import**——先查 patch 条目和 `name` 的写法 |
-| `import-evaluated` | 模块求值了，但 `apply()` 没被调用（查 patch 的 `config`/`id`） |
+| `import-evaluated` | 模块求值了，但 `apply()` 没被调用——**查 `Config`**（见下一条） |
 | `apply-enter` | 进 `apply()` 了，问题在注册阶段 |
 | `register-failed <tool> <err>` | 注册抛异常了，错误信息在这行 |
 | `apply-done N disposers` | 全部正常，工具应该可用 |
@@ -119,10 +119,36 @@ name: './node_modules/dsh-powershell/lib/index.js'  # ✅
 不要用"工具在不在"来判断插件是否工作——内置 `pwsh` 会顶替掉同名工具，让你误以为一切正常
 （见本文开头的改名说明）。
 
+### ⚠️ `Config` 必须是 schemastery schema，不能是普通对象
+
+卡在 `import-evaluated` 却进不了 `apply-enter`，九成是这里。cordis 的
+`resolveConfig()` 看到 `runtime.Config` 为真就会执行：
+
+```js
+runtime.Config["~standard"].validate(config)
+```
+
+普通对象没有 `~standard`，于是抛 `TypeError: Cannot read properties of undefined
+(reading 'validate')`，而这个异常被 loader 吞进一个**没有控制台的 logger**——全程无提示。
+
+两条硬规则：
+
+1. `Config` 必须是 `z.object({...})`（schemastery）。
+2. **拿不到 schema 时必须导出 `undefined`**，不能退化成普通对象：
+
+```js
+const schemaMod = await importFirst(["@deepseek-ai/schemastery", "schemastery"]);
+export const Config = schemaMod ? z.object({ ... }) : undefined;
+```
+
+另外，插件**要自带 `@deepseek-ai/schemastery` 依赖**。用 junction 把插件装进
+`profile/node_modules` 时，ESM 的动态 `import()` 会跟随真实路径解析，
+从插件源码所在的盘符往上找不到任何 `node_modules`，schema 就静默变成 `null`。
+
 ## 开发
 
 ```powershell
-node test/run.mjs                  # 19 项集成测试（真跑 powershell，不打桩）
+node test/run.mjs                  # 18 项集成测试（真跑 powershell，不打桩）
 node test/e2e-uac.mjs              # 真 UAC 端到端：点「是」，验证提权 + 边跑边出输出
 node test/uac-probe.mjs            # 真 UAC：点「是」，应报 status=ok
 node test/uac-probe.mjs --cancel   # 真 UAC：点「否」，应报 status=cancelled

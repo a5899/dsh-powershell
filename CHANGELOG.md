@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.0.3 — 2026-11-07
+
+**修复：`Config` 不是 schema，导致 `apply()` 永远不被调用**
+
+- 症状：`load.log` 里有 `import-evaluated`（模块求值成功），但**没有 `apply-enter`**，
+  工具全部 `unknown tool`，零报错。
+- 根因链（读 `cordis-plugin-loader` + `cordis` 源码确认）：
+  `_init()` → `import()` 成功 → `unwrapExports()` 拿到 `{name,inject,Config,apply}` →
+  `new Fiber(...)` → `resolveConfig(runtime, config)` 执行
+  `runtime.Config['~standard'].validate(config)`。
+  旧代码把 `Config` 写成了一个普通对象（`{ description, ...DEFAULTS }`），没有 `~standard`，
+  于是抛 `TypeError: Cannot read properties of undefined (reading 'validate')`；
+  该异常被 `_init()` 的 `this.ctx.logger.error(error)` 吞掉，而宿主无控制台 → 全程无声。
+- 正确写法：`Config` 必须是 schemastery 的 `z.object({...})`；拿不到 schema 时
+  必须导出 `undefined`（`resolveConfig` 对 falsy `Config` 直接放行、跳过校验），
+  **绝不能退化成普通对象**——那等于埋了一颗必炸的雷。
+- 依赖修复：插件原先假设能解析宿主的 `@deepseek-ai/schemastery`。本机安装走的是
+  **junction**（`profile/node_modules/dsh-powershell` → `D:\dsh-plugins\dsh-powershell`），
+  ESM 的动态 `import()` 跟随真实路径解析，从 `D:\...` 向上找不到任何 `node_modules`，
+  于是 schema 解析为 `null`、`Config` 退化成 `undefined`——又一次静默半瘫痪。
+  现在 `@deepseek-ai/schemastery@3.18.4`（与宿主 vendored 版本一致）写入 `dependencies`，
+  插件自带依赖，不再依赖 host 的解析位置，junction 安装与 npm 安装行为一致。
+- `Config` 现在带完整字段说明（settings UI 可据此生成表单），`shell` 用
+  `z.union([z.const("auto"), z.const("powershell"), z.const("pwsh")])` 约束取值。
+
 ## 1.0.2 — 2026-11-07
 
 **安装踩坑：patch 条目必须用相对路径**

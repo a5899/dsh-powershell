@@ -1,6 +1,6 @@
 {
   "name": "dsh-powershell",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "DSH plugin: run PowerShell commands directly from the agent (inline code, no script files), with an explicit UAC-elevated tool. Registers psh / psh_elevated / psh_kill / psh_status plus an always-on 'prefer commands over scripts' policy.",
   "type": "module",
   "main": "lib/index.js",
@@ -55,5 +55,8 @@
   "bugs": {
     "url": "https://github.com/a5899/dsh-powershell/issues"
   },
-  "author": "a5899"
+  "author": "a5899",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "3.18.4"
+  }
 }
