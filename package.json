@@ -48,10 +48,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/USERNAME/dsh-powershell.git"
+    "url": "https://github.com/a5899/dsh-powershell.git"
   },
-  "homepage": "https://github.com/USERNAME/dsh-powershell#readme",
+  "homepage": "https://github.com/a5899/dsh-powershell#readme",
   "bugs": {
-    "url": "https://github.com/USERNAME/dsh-powershell/issues"
-  }
+    "url": "https://github.com/a5899/dsh-powershell/issues"
+  },
+  "author": "a5899"
 }
