@@ -252,12 +252,25 @@ node test/schema-check.mjs         # 注册全部工具 + 递归扫描 schema（
 node test/run.mjs                  # 18 项集成测试（真跑 powershell，不打桩）
 node test/jobs-probe.mjs           # 后台任务层：边跑边读 / 游标 / 字节上限 / 超时 / exit code
 node test/job-tool-smoke.mjs       # 通过真实 apply() 驱动 psh_job，含错误路径
+node test/job-label-check.mjs      # job 列表里的标签是任务说明，不是脚本脚手架
+node test/live-job-demo.mjs        # 打印时间线，肉眼确认"边跑边到"（不是断言，是演示）
 node test/e2e-uac.mjs              # 真 UAC 端到端：点「是」，验证提权 + 边跑边出输出
 node test/uac-probe.mjs            # 真 UAC：点「是」，应报 status=ok
 node test/uac-probe.mjs --cancel   # 真 UAC：点「否」，应报 status=cancelled
 ```
 
-`npm test` 会按顺序跑 schema-check → run → jobs-probe。
+`npm test` 会按顺序跑 schema-check → run → jobs-probe → job-tool-smoke → job-label-check。
+
+`live-job-demo.mjs` 的输出示例（命令共 8.5 秒，注意 `[live]` 与 `[done]` 的时分界）：
+
+```
++   23ms started job-1e69eb6e pid=51064
++  734ms [live] [11:36:36.821] step 1/8
++ 1446ms [live] [11:36:37.824] step 2/8
+   …
++ 7849ms [live] [11:36:43.858] step 8/8
++ 8556ms [done] [11:36:44.860] finished
+```
 
 测试刻意用真实子进程：这里的每个难点都是 Windows 的怪癖，mock 会全绿而真机全红。
 （这条不是空话——`jobs-probe` 的第一版就因为断言写得太松，在一行根本没格式化的
