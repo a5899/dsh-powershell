@@ -37,6 +37,29 @@ MCP 的 stdio/HTTP 通道根本握不住它的输出。所以这里做成 DSH �
 
 > 内置的 `pwsh` 与本插件的 `psh` 是两回事：内置那个不支持提权。要管理员权限时用 `psh_elevated`。
 
+真机实测（Windows 11 / PowerShell 5.1.26100.9711 / RTX 4060 笔记本）：
+
+```
+# psh —— 普通权限
+[unelevated] ok · 1623 ms
+5.1.26100.9711 · DESKTOP-XXXX · a5093 · elevated: False
+tick 1 at 10:50:09.224
+tick 2 at 10:50:09.643      ← 间隔 400ms，等于 Start-Sleep 的时长
+tick 3 at 10:50:10.059
+
+# psh —— 退出码原样返回（PS 5.1 默认会把非零压成 1）
+cmd /c exit 5   →   [unelevated] exit 5 · 310 ms
+
+# psh_elevated —— 真 UAC 提权
+[elevated] ok · 5744 ms
+elevated pid 51160 · output streamed live to the elevation window
+proof: elevated=True user=a5093          ← 提权令牌确实生效
+volume C: protection=Off percent=0       ← BitLocker 查询成功，普通权限会 Access denied
+tick 1 at 10:51:58.427
+tick 2 at 10:51:59.132                   ← 间隔 700ms，边跑边回传
+tick 3 at 10:51:59.846
+```
+
 
 配置项（`cordis.patch.yml`）：
 
