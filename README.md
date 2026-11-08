@@ -162,6 +162,28 @@ DSH 的工具 schema 校验器不认 `{ type: ["number", "null"] }` 这种联合
 - `npm test` 会先跑 `test/schema-check.mjs`：真实注册一遍工具，再递归扫描所有
   `parameters` / `output.schema`，发现数组 `type` 直接失败。
 
+### ⚠️ 每个工具都必须声明 `output.schema` **和** `output.render`
+
+只给 `{ schema }` 不够，宿主会拒绝：
+
+```
+register-failed psh_kill tool "psh_kill" must declare output { schema, render, presentationMeta? }
+```
+
+这个错误不会让宿主崩，但**该工具和它之后的工具全部缺席**——插件看起来"加载了"，
+实际少一半功能。排查时一定要数工具个数，别看到第一个工具能用就以为都好了。
+
+```js
+output: {
+  schema: { type: "object", properties: { ok: { type: "boolean" } } },
+  render(_args, value) {
+    return [{ type: "text", text: value.ok ? "terminated" : "not terminated" }];
+  },
+}
+```
+
+`schema-check.mjs` 现在也校验这两项，本地就能拦住。
+
 ## 开发
 
 ```powershell

@@ -22,14 +22,27 @@ const walk = (node, path, bad) => {
 };
 
 const bad = [];
+const problems = [];
 for (const t of tools) {
   walk(t.parameters, `${t.name}.parameters`, bad);
   walk(t.output?.schema, `${t.name}.output`, bad);
+  // 宿主还会检查 output 的形态：缺 schema 或 render 都会 register-failed。
+  if (!t.output || typeof t.output !== "object") {
+    problems.push(`${t.name}: missing output { schema, render }`);
+  } else {
+    if (!t.output.schema) problems.push(`${t.name}: output.schema is missing`);
+    if (typeof t.output.render !== "function") problems.push(`${t.name}: output.render is not a function`);
+  }
 }
 
 if (bad.length) {
   console.log("ARRAY TYPES FOUND:");
   for (const b of bad) console.log("  " + b);
-  process.exit(1);
 }
+if (problems.length) {
+  console.log("OUTPUT DECLARATION PROBLEMS:");
+  for (const p of problems) console.log("  " + p);
+}
+if (bad.length || problems.length) process.exit(1);
 console.log("OK: every schema.type is a single string across", tools.length, "tools");
+console.log("OK: every tool declares output.schema and output.render");

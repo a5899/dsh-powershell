@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.5 — 2026-11-08
+
+**修复：`psh_kill` / `psh_status` 缺 `output.render` 导致注册失败**
+
+- 症状：1.0.4 让宿主不再崩了，但 `load.log` 里是
+  `register-failed psh_kill tool "psh_kill" must declare output { schema, render, presentationMeta? }`。
+  `psh` / `psh_elevated` 注册成功，`psh_kill` 和它之后的工具全部缺席——插件"加载了但少一半工具"。
+- 根因：DSH 要求**每个工具**都声明完整的 `output`，只给 `{ schema }` 不够，`render` 也必须有。
+- 修复：两个工具都补上 `output.render`；`psh_status` 的 schema 从空的 `{ type: "object" }`
+  改成列出真实字段，渲染成人可读的摘要。
+- 防线：`test/schema-check.mjs` 现在同时校验 `output.schema` 存在且 `output.render` 是函数，
+  `npm test` 会先跑它，这类问题本地就能拦。
+
 ## 1.0.4 — 2026-11-08
 
 **修复：工具 output schema 里的数组 `type` 会把整个 DSH 带崩**
