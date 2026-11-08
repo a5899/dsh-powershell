@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.9 — 2026-11-08
+
+**收尾 1.0.8 的遗留项，并把验证做成可复现的脚本**
+
+- `node test/live-job-demo.mjs`：打印带时间戳的时间线，用输出本身的先后顺序证明"边跑边到"。
+  实测 8.5 秒的命令，前 7 行在 `+734ms` … `+6.4s` 之间逐行到达，最后一行 `finished` 在 `+8.5s`。
+- `node test/job-label-check.mjs`：`psh_job action=list` 里显示的是任务说明，不是脚本脚手架。
+  - 修 `describe()`：循环头（`1..4 | ForEach-Object {`）、裸 `{`、格式化表达式行（`"…" -f …`）
+    全都跳过，取第一条真正有意义的行；显式 `label` 永远优先。
+  - 之前的 bug：`list` 里显示的标签是整行 PowerShell 源码 `("[{0:HH:mm:ss}] tick {1}" -f (Get-Date), $_)`。
+- `npm test` 现在串起 5 个测试文件：schema-check / run / jobs-probe / job-tool-smoke / job-label-check。
+
 ## 1.0.8 — 2026-11-08
 
 **新增 `psh_job`：让长命令的输出在运行时就能看到**
