@@ -36,10 +36,44 @@ MCP 的 stdio/HTTP 通道根本握不住它的输出。所以这里做成 DSH �
 |---|---|
 | `psh` | **主工具**。`code` 里直接写 PowerShell（多行脚本也行）。普通权限，一次调用一个新进程。 |
 | `psh_elevated` | **提权工具**。弹 UAC 以管理员身份运行，输出边跑边流回来。用户取消（1223）如实报告，不重试。 |
+| `psh_job` | **长命令工具**。后台跑 + 按字节游标轮询，跑着的时候就能读到输出。见下节。 |
 | `psh_kill` | 让一个提权进程自己退出（低权限进程杀不掉高权限进程，原因见下）。 |
 | `psh_status` | 当前是否已提权、用的哪个 shell、脚本块日志是否开着——**先问再断言**，别猜。 |
 
 > 内置的 `pwsh` 与本插件的 `psh` 是两回事：内置那个不支持提权。要管理员权限时用 `psh_elevated`。
+
+## 为什么需要 `psh_job`：工具调用没有增量通道
+
+这是个**接口层事实**，不是没做好：DSH 的工具定义是
+
+```ts
+execute(args: unknown, exec: ToolRunContext): Promise<unknown>
+```
+
+只在结束时落定一次，可选的 `projectContent?` / `finalizeContent?` 也都在 promise 之后跑。
+**没有 onUpdate、没有 stream、没有增量帧。** 所以 `psh` 跑一条 5 分钟的命令，
+前 5 分钟你什么也看不到——实测一条 2.44 秒的命令，输出是跑完才一次性回来的。
+
+（`psh_elevated` 看起来是"流式"的，那是被逼出来的：提权进程在另一个会话，根本拿不到 stdout，
+只能用文件做 mailbox 一点点读。）
+
+既然加不了流，就换形状——**把一次长调用拆成很多次短调用**：
+
+```
+psh_job action=start code="..." timeoutMs=0   → 立刻返回 id
+psh_job action=poll  id=... offset=0          → 读到此刻为止的新输出 + 下一个 offset
+psh_job action=poll  id=... offset=<上面返回的>  → 继续读，直到 done: true
+```
+
+- 输出落在 `%TEMP%\dsh-powershell-jobs\<id>\{stdout,stderr}.txt`，**文件本身就是进度条**。
+- `stderr` 用独立游标，单独返回，不混进 stdout。
+- 单次 poll 最多回 64 KiB，且在换行边界切；游标无损，不会漏也不会重。
+- 字节上限（默认 8 MiB）到了自动停——"永远打印"的命令不会撑爆磁盘。
+- 超时也照样能取回已经写出来的部分输出。
+- `action=list` 看全部任务，`action=stop` 停掉一个；`stopJob` 诚实返回
+  `already-done` / `no-process` / `killed` / `kill-failed`，不会假装杀成功。
+
+短命令**不要**用 `psh_job`：起任务再 poll 两次，比直接 `psh` 慢也更啰嗦。
 
 真机实测（Windows 11 / PowerShell 5.1.26100.9711 / RTX 4060 笔记本）：
 
@@ -216,12 +250,18 @@ output: {
 ```powershell
 node test/schema-check.mjs         # 注册全部工具 + 递归扫描 schema（先跑它）
 node test/run.mjs                  # 18 项集成测试（真跑 powershell，不打桩）
+node test/jobs-probe.mjs           # 后台任务层：边跑边读 / 游标 / 字节上限 / 超时 / exit code
+node test/job-tool-smoke.mjs       # 通过真实 apply() 驱动 psh_job，含错误路径
 node test/e2e-uac.mjs              # 真 UAC 端到端：点「是」，验证提权 + 边跑边出输出
 node test/uac-probe.mjs            # 真 UAC：点「是」，应报 status=ok
 node test/uac-probe.mjs --cancel   # 真 UAC：点「否」，应报 status=cancelled
 ```
 
+`npm test` 会按顺序跑 schema-check → run → jobs-probe。
+
 测试刻意用真实子进程：这里的每个难点都是 Windows 的怪癖，mock 会全绿而真机全红。
+（这条不是空话——`jobs-probe` 的第一版就因为断言写得太松，在一行根本没格式化的
+PowerShell 输出上照样"通过"了。）
 
 ## 许可
 

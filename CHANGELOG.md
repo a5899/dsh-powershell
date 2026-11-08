@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.0.8 — 2026-11-08
+
+**新增 `psh_job`：让长命令的输出在运行时就能看到**
+
+- 起因：用户要求「让你直接看到命令行输出了什么，以及如何变化」。实测 `psh` 跑一条
+  2.44 秒的命令，结果是**跑完一次性**回来的，中间 2.4 秒屏幕上一片空白——长命令看起来像卡死。
+- 根因在 DSH 的接口层，不是本插件的疏忽：`ToolDefinition.execute(args, ctx): Promise<unknown>`
+  只在结束时落定一次，只有 `projectContent?` / `finalizeContent?`，**没有 onUpdate / stream / 增量帧**。
+  （`psh_elevated` 之所以能"流式"，是因为提权进程在另一个会话、拿不到 stdout，被迫用文件做 mailbox。）
+- 解法不是硬造流式管道，而是换形状：**后台任务 + 字节游标轮询**。
+  - `psh_job action=start` 立刻返回 `id`，不等命令结束。
+  - `psh_job action=poll id=… offset=…` 读到目前为止的新输出，返回下一个 `offset`。
+  - `stderr` 用独立游标，单独返回，不混进 stdout。
+- 新文件 `lib/jobs.js`：输出落盘到 `%TEMP%\dsh-powershell-jobs\<id>\stdout.txt`，
+  文件本身就是进度条；字节上限默认 8 MiB，达到即停，避免"永远打印"的命令撑爆磁盘；
+  超时仍能取回已完成的部分输出；完成 30 分钟后自动清理。
+- `psh_kill` 之外新增 `action=stop` / `action=list`；`stopJob` 诚实返回
+  `already-done` / `no-process` / `killed` / `kill-failed`，绝不假装杀成功。
+- 插件 dispose 时 `killAllJobs()`，不留无人可寻址的子进程。
+- 策略文本补写「命令跑得久时用 `psh_job` 而不是 `psh`」以及三步用法；
+  同时提醒短命令不要用 `psh_job`（起任务再 poll 两次比直接 `psh` 慢也更啰嗦）。
+
+**测试**
+
+- 新增 `test/jobs-probe.mjs`（7 项）：边跑边读、游标无损、字节上限、超时保留部分输出、
+  `cmd /c exit 7` 原样返回 7、`stop` 诚实、`list` 完整。
+- 新增 `test/job-tool-smoke.mjs`：用真实的 `apply()` + `execute()` 驱动第 5 个工具，
+  验证工具确实注册、流式确实发生、错误路径确实报 `ok: false`。
+
+**踩到的三个坑（都已修）**
+
+1. 测试里的 PowerShell 字符串 `"[{0:HH:mm:ss.fff}] line $_"` 忘了 `-f` 格式化，原样输出字面量；
+   而断言只比了 `line N`，所以**测试通过但没测到东西**。教训：断言必须校验内容格式。
+2. Windows 输出行尾是 `\r\n`，按 `\n` 切分会残留 `\r`。在 `pollJob` 里统一规范化，
+   且**游标在规范化之前按原始字节数计算**，保证偏移始终指向磁盘上的真实位置。
+3. 假 ctx 的 `effect` 写成 `() => () => {}`（不执行注册函数），导致探针里"一个工具都没注册"
+   却看不出原因。宿主是 `ctx.effect(fn)` 立即执行，测试必须照做。
+
 ## 1.0.7 — 2026-11-08
 
 **策略纠正：脚本更好时就写脚本，不要硬扛 `psh`**
