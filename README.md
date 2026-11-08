@@ -145,9 +145,27 @@ export const Config = schemaMod ? z.object({ ... }) : undefined;
 `profile/node_modules` 时，ESM 的动态 `import()` 会跟随真实路径解析，
 从插件源码所在的盘符往上找不到任何 `node_modules`，schema 就静默变成 `null`。
 
+### ⚠️ 工具 schema 的 `type` 只能是单个字符串，不能是数组
+
+卡在 `register-failed` 并且**整个 DSH 宿主跟着崩**，多半是这里：
+
+```
+unsupported JSON schema: schema.properties.exitCode.type must be a single type string (type arrays are not supported)
+```
+
+DSH 的工具 schema 校验器不认 `{ type: ["number", "null"] }` 这种联合类型。而注册发生在
+启动路径上，异常不会被隔离，一个字段写错就能带走整个后端宿主。
+
+- 想要"可为空"的语义，就用单类型 + 哨兵值（本插件用 `-1` 表示"没拿到退出码"）。
+- 真需要联合类型，用 `anyOf`，别用类型数组。
+- **声明类型要和实际返回值一致**：schema 写 `number`，`execute` 就不能返回 `null`。
+- `npm test` 会先跑 `test/schema-check.mjs`：真实注册一遍工具，再递归扫描所有
+  `parameters` / `output.schema`，发现数组 `type` 直接失败。
+
 ## 开发
 
 ```powershell
+node test/schema-check.mjs         # 注册全部工具 + 递归扫描 schema（先跑它）
 node test/run.mjs                  # 18 项集成测试（真跑 powershell，不打桩）
 node test/e2e-uac.mjs              # 真 UAC 端到端：点「是」，验证提权 + 边跑边出输出
 node test/uac-probe.mjs            # 真 UAC：点「是」，应报 status=ok

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.4 — 2026-11-08
+
+**修复：工具 output schema 里的数组 `type` 会把整个 DSH 带崩**
+
+- 症状：`load.log` 一路走到 `register-scan`，紧接着
+  `register-failed psh unsupported JSON schema: schema.properties.exitCode.type must be a single type string (type arrays are not supported)`，
+  DSH 后端宿主随即崩溃。
+- 根因：`psh` / `psh_elevated` 的 output schema 把可能为空的退出码写成
+  `exitCode: { type: ["number", "null"] }`。DSH 的工具 schema 校验器**只接受单个类型字符串**，
+  遇到数组直接抛异常——而注册发生在启动路径上，异常没被隔离，整个宿主跟着倒。
+- 修复：`exitCode` 改为 `{ type: "number" }`，用 **`-1`** 表示「没有拿到退出码」
+  （超时、用户取消 UAC、输入为空）；`pick()` 与两处空输入分支同步把 `null` 换成 `-1`，
+  保证声明类型与实际返回值一致。
+- 新增 `test/schema-check.mjs`：用真实的 `apply()` 注册全部工具，再递归扫描每个
+  `parameters` / `output.schema`，只要出现数组 `type` 就失败。`npm test` 现在**先跑它**，
+  这类崩溃在本地就能拦住，不用等 DSH 崩掉再查。
+
 ## 1.0.3 — 2026-11-07
 
 **修复：`Config` 不是 schema，导致 `apply()` 永远不被调用**
