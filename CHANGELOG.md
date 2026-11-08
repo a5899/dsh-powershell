@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.6 — 2026-11-08
+
+**修复：`psh_status` 声明 boolean，实际返回 null**
+
+- 症状：工具能注册也能调用，但结果是
+  `Error: tool "psh_status" returned invalid output: "value.scriptBlockLogging" must be a boolean`。
+- 根因：`(Get-ItemProperty ...).EnableScriptBlockLogging` 在注册表键不存在时是 `null`，
+  而 schema 声明了 `type: "boolean"`。**这次是调用期校验，只报错、不再崩宿主** ——
+  比 1.0.4 的启动期崩溃好得多，但工具照样不可用。
+- 修复：PowerShell 侧 `[bool](...)` 强制转换，JS 侧再逐个字段 `Boolean()/String()` 归一化，
+  不依赖"JSON 里恰好有值"。
+- 顺带修：`psh_elevated` 声明了 `elevated` 字段却从未返回它。现在明确返回
+  `elevated: status ∈ {ok, error, timeout}` —— 用来区分"提权真的成立了"和
+  "根本没起来"，免得把 `Access denied` 误读成权限不足。
+- 防线升级：`test/schema-check.mjs` 现在会**真的执行** `psh` 和 `psh_status`，
+  再按 schema 逐字段校验返回值类型（`psh_elevated` 会弹 UAC、`psh_kill` 会碰真实进程，
+  都不在自检里跑）。"声明与实际不符"这类问题本地就能抓到。
+
 ## 1.0.5 — 2026-11-08
 
 **修复：`psh_kill` / `psh_status` 缺 `output.render` 导致注册失败**

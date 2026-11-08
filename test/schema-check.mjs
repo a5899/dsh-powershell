@@ -46,3 +46,49 @@ if (problems.length) {
 if (bad.length || problems.length) process.exit(1);
 console.log("OK: every schema.type is a single string across", tools.length, "tools");
 console.log("OK: every tool declares output.schema and output.render");
+
+// ── 声明 vs 实际返回值 ───────────────────────────────────────────────────────
+// 这一层的教训：psh_status 声明 scriptBlockLogging 是 boolean，但注册表键不存在时
+// PowerShell 返回 null，调用期报 "returned invalid output: ... must be a boolean"。
+// 只在本地跑「注册」是不够的，必须真的执行一遍再按 schema 校验。
+// 只跑安全的两个工具：psh（普通命令）和 psh_status。psh_elevated 会弹 UAC，
+// psh_kill 会碰真实进程，都不在自检里执行。
+const typeOk = (value, node, path, out) => {
+  if (!node || typeof node !== "object") return;
+  const t = node.type;
+  if (t === "boolean" && typeof value !== "boolean") out.push(`${path}: expected boolean, got ${JSON.stringify(value)}`);
+  if (t === "number" && typeof value !== "number") out.push(`${path}: expected number, got ${JSON.stringify(value)}`);
+  if (t === "string" && typeof value !== "string") out.push(`${path}: expected string, got ${JSON.stringify(value)}`);
+  if (t === "array") {
+    if (!Array.isArray(value)) out.push(`${path}: expected array, got ${JSON.stringify(value)}`);
+    else if (node.items) value.forEach((v, i) => typeOk(v, node.items, `${path}[${i}]`, out));
+    return;
+  }
+  if (t === "object" && node.properties && value && typeof value === "object") {
+    for (const [k, sub] of Object.entries(node.properties)) typeOk(value[k], sub, `${path}.${k}`, out);
+  }
+};
+
+const samples = {
+  psh: { code: "Write-Output 'schema-check'" },
+  psh_status: {},
+};
+const mismatches = [];
+for (const t of tools) {
+  const args = samples[t.name];
+  if (!args) continue;
+  try {
+    const value = await t.execute(args);
+    const out = [];
+    typeOk(value, t.output.schema, t.name, out);
+    if (out.length) mismatches.push(...out);
+    else console.log(`OK: ${t.name} output matches its declared schema`);
+  } catch (err) {
+    mismatches.push(`${t.name}: threw ${err && err.message}`);
+  }
+}
+if (mismatches.length) {
+  console.log("OUTPUT DOES NOT MATCH SCHEMA:");
+  for (const m of mismatches) console.log("  " + m);
+  process.exit(1);
+}
