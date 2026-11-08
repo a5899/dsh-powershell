@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.0.12 — 2026-11-08
+
+**`psh_elevated` 的"实时输出"之前是假的：真机一测就空**
+
+- 症状：`psh_elevated` 跑一个先打印、再 `Start-Sleep -Seconds 180` 的命令，
+  第 4 秒去读 `stdout.txt` 是**空的**，但那一行明明早就该打印了。
+- 根因：宿主脚本用 `$items = & ([ScriptBlock]::Create($body)) *>&1` 收集输出，
+  **数组要等整个 block 返回才有值**，`foreach` 才开写文件。命令跑多久，
+  文件就空多久。之前 10:51 那次"看到 tick 一行行出来"的验证之所以通过，
+  是因为整段代码 1 秒内就跑完了，看起来像流式而已。
+- 修法：换成 **runspace 的 `PSDataCollection` + `DataAdded` 事件**，
+  每产生一项就立刻写文件（`AutoFlush = true`），不等 block 结束。三个坑：
+  - `Register-ObjectEvent -InputObject $pipe -EventName DataAdded` 不行：
+    `PowerShell` 对象上没有 `DataAdded` 事件，事件挂在 `PSDataCollection` 上。
+  - `[System.Management.Automation.DataAddedEventHandler]` 不是可解析的类型名，
+    直接给 `add_DataAdded` 传 scriptblock，让它自己转委托。
+  - `BeginInvoke($null, $outColl)` 会报"找不到重载"：泛型参数绑不上字面量 `$null`，
+    **输入和输出都必须是真实的 `PSDataCollection` 实例**。
+- 连带修 `$LASTEXITCODE`：body 现在在独立 runspace 里跑，宿主的 `$LASTEXITCODE`
+  永远不会被它改。改为在 body 末尾追加 `"__DSHPS_EXIT__:$LASTEXITCODE"` 回传，
+  发射器把这个控制行丢掉（不能当成用户输出），宿主用它定 `result.txt`。
+  优先级：已有失败码 > 显式 `exit N` > body 回传码 > 宿主 `$LASTEXITCODE`。
+- 新增 `test/elevated-stream-check.mjs`：跑一个三行、每行间隔 900 ms 的命令，
+  从外面每 100 ms 采样 `stdout.txt`，断言在 `done.txt` 出现之前就读到内容。
+  实测：**第一行 757 ms 落到文件**，而整段要 1.8 秒才结束。
+- 新增 `test/kill-elevated-live.mjs`（真机 UAC）：显式 `runDir` 传给 `elevate()`，
+  等 `pid.txt` 作为"UAC 已批准"的信号。真机验证通过——
+  `killElevatedPid -> ok=true method=sentinel`，提权进程 `48528` 自杀，
+  `done.txt` 不存在（被杀的运行不假装成功）。
+
 ## 1.0.11 — 2026-11-08
 
 **`psh_kill` 之前那个"靠脚本块日志"的说法是假的，这次做成真的**

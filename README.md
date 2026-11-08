@@ -98,6 +98,12 @@ tick 2 at 10:51:59.132                   ← 间隔 700ms，边跑边回传
 tick 3 at 10:51:59.846
 ```
 
+> ⚠️ 上面那次提权实测的"流式"其实看运气：1 秒内跑完的命令，即使一次性收集也会看起来像流式。
+> 1.0.12 之前宿主用的是 `$items = & sb *>&1` 再 `foreach`，**数组要等整个 block 返回**，
+> 所以一个"先打印再 Sleep 180 秒"的命令，前 180 秒 `stdout.txt` 是空的。
+> 现在改成 runspace 的 `PSDataCollection` + `DataAdded`，每产出一项立刻写文件——
+> `test/elevated-stream-check.mjs` 断言第一行在 **757 ms** 落到磁盘，而整段要 1.8 秒才结束。
+
 
 配置项（`cordis.patch.yml`）：
 
@@ -261,6 +267,9 @@ node test/jobs-probe.mjs           # 后台任务层：边跑边读 / 游标 / �
 node test/job-tool-smoke.mjs       # 通过真实 apply() 驱动 psh_job，含错误路径
 node test/job-label-check.mjs      # job 列表里的标签是任务说明，不是脚本脚手架
 node test/live-job-demo.mjs        # 打印时间线，肉眼确认"边跑边到"（不是断言，是演示）
+node test/kill-sentinel-check.mjs  # 哨兵文件能让卡住的宿主自杀（无权限，不用点 UAC）
+node test/elevated-stream-check.mjs # 命令还在跑时 stdout.txt 就已经有内容（断言，不是演示）
+node test/kill-elevated-live.mjs   # 真 UAC：点「是」，然后证明低权限能杀掉高权限进程
 node test/e2e-uac.mjs              # 真 UAC 端到端：点「是」，验证提权 + 边跑边出输出
 node test/uac-probe.mjs            # 真 UAC：点「是」，应报 status=ok
 node test/uac-probe.mjs --cancel   # 真 UAC：点「否」，应报 status=cancelled
