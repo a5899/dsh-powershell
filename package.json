@@ -1,6 +1,6 @@
 {
   "name": "dsh-powershell",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "DSH plugin: run PowerShell commands directly from the agent (inline code, no script files), with an explicit UAC-elevated tool and a background job tool that makes long-running output visible while it runs. Registers psh / psh_elevated / psh_job / psh_kill / psh_status plus an always-on 'prefer commands over scripts' policy.",
   "type": "module",
   "main": "lib/index.js",
@@ -21,11 +21,12 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node test/schema-check.mjs && node test/run.mjs && node test/jobs-probe.mjs && node test/job-tool-smoke.mjs && node test/job-label-check.mjs",
+    "test": "node test/schema-check.mjs && node test/run.mjs && node test/jobs-probe.mjs && node test/job-tool-smoke.mjs && node test/job-label-check.mjs && node test/job-stderr-check.mjs",
     "test:schema": "node test/schema-check.mjs",
     "test:jobs": "node test/jobs-probe.mjs",
     "test:job-tool": "node test/job-tool-smoke.mjs",
     "test:labels": "node test/job-label-check.mjs",
+    "test:stderr": "node test/job-stderr-check.mjs",
     "test:demo": "node test/live-job-demo.mjs",
     "test:uac": "node test/uac-probe.mjs",
     "test:uac-cancel": "node test/uac-probe.mjs --cancel",

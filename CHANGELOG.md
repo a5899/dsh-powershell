@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.10 — 2026-11-08
+
+**在真宿主里跑通 `psh_job` 后当场发现的 stderr 噪声**
+
+- 现象：重启后第一次真实 `psh_job poll`，`--- stderr ---` 段里只有一行 `#< CLIXML`。
+  这是 PowerShell 5.1 在无控制台宿主上写进度记录用的封装头，不是错误——
+  但 agent 读到 `#< CLIXML` 会以为出了事。
+- 根因：`runner.js` 早有 `stripTransportNoise()` 处理它，但 `jobs.js` 没调用。
+  而且**不能直接复用**：`stripTransportNoise` 要求拿到完整 envelope，
+  而 `pollJob` 返回的是任意字节区间，可能从中间切开。
+- 修法：`jobs.js` 新增 `cleanStderrChunk()`，按行处理、容错：
+  丢掉 `#< CLIXML` 与 `<Objs>` 包装、拆开 `<S>…</S>` 记录、
+  丢掉 `Preparing modules for first use` 这类纯进度，**其余原样保留**。
+  只在 `stream === "stderr"` 时生效，stdout 一个字节都不动。
+- 新增 `test/job-stderr-check.mjs`：真实错误必须存活、封装必须消失、
+  用返回的 offset 续读不能重复（游标仍然指向磁盘真实字节）。
+- `npm test` 现在串 6 个测试文件。
+
 ## 1.0.9 — 2026-11-08
 
 **收尾 1.0.8 的遗留项，并把验证做成可复现的脚本**
