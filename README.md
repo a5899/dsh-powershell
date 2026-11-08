@@ -37,8 +37,8 @@ MCP 的 stdio/HTTP 通道根本握不住它的输出。所以这里做成 DSH �
 | `psh` | **主工具**。`code` 里直接写 PowerShell（多行脚本也行）。普通权限，一次调用一个新进程。 |
 | `psh_elevated` | **提权工具**。弹 UAC 以管理员身份运行，输出边跑边流回来。用户取消（1223）如实报告，不重试。 |
 | `psh_job` | **长命令工具**。后台跑 + 按字节游标轮询，跑着的时候就能读到输出。见下节。 |
-| `psh_kill` | 让一个提权进程自己退出（低权限进程杀不掉高权限进程，原因见下）。 |
-| `psh_status` | 当前是否已提权、用的哪个 shell、脚本块日志是否开着——**先问再断言**，别猜。 |
+| `psh_kill` | 让一个提权进程自己退出（低权限进程杀不掉高权限进程，用 run 目录里的哨兵文件通知它，原理见下）。 |
+| `psh_status` | 当前是否已提权、用的哪个 shell、PowerShell 脚本块日志是否开着——**先问再断言**，别猜。 |
 
 > 内置的 `pwsh` 与本插件的 `psh` 是两回事：内置那个不支持提权。要管理员权限时用 `psh_elevated`。
 
@@ -127,10 +127,17 @@ tick 3 at 10:51:59.846
 3. **提权进程的 stdout/stderr 过不了 ShellExecute 边界。** 落盘到每次运行独立的临时目录
    （`pid.txt` / `stdout.txt` / `stderr.txt` / `result.txt` / `done.txt`），父进程轮询信箱。
 4. **低权限进程终止不了高权限进程**（拿不到 `PROCESS_TERMINATE`，报 `Access is denied`）。
-   `psh_kill` 的绕法是让目标**自己**退出：用 `WScript.Shell` COM 起一个 PowerShell
-   去碰脚本块日志，日志钩子先于代码执行触发 → 提权进程按策略把自己杀掉。
-   **这依赖 `ScriptBlockLogging` 开着**；没开就如实返回失败，并告诉你只能手动点 Terminate。
-   用 COM 而不是再起一个 `powershell.exe`，是因为新起的那个也会进日志、可能被误杀。
+   `psh_kill` 的解法是让目标**自己**退出，而两边唯一共享的通道是那次运行的目录：
+   提权宿主在**后台 runspace** 里每 250 ms 看一眼 `runDir\kill-request` 存不存在，
+   一出现就 `[Environment]::Exit(137)`。`psh_kill` 要做的只是把这个文件写出来——
+   创建文件不需要任何权限，所以任意完整性级别都能用。**不需要打开任何系统策略。**
+   放在后台 runspace 是关键：用户代码 `Start-Sleep 120` 把主线程卡住时，
+   主线程根本没机会检查，背景线程照样跑（实测哨兵出现后 ~2.3 秒就退出）。
+
+   > 早期版本声称"靠 PowerShell 脚本块日志触发自杀"，**那是错的**：日志只写不读，
+   > 不能当通道；当时实际做的事是用 `WScript.Shell` 起一个普通权限的 PowerShell 去杀，
+   > 和 DSH 自己一样杀不掉。所以即便把 `ScriptBlockLogging` 打开也依然无效，
+   > 而全局打开它会把所有脚本块（含命令行里的密码）复制进系统事件日志。
 
 ## 装
 

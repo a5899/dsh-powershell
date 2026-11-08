@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.0.11 — 2026-11-08
+
+**`psh_kill` 之前那个"靠脚本块日志"的说法是假的，这次做成真的**
+
+- 起因：用户问「要不要打开 ScriptBlockLogging 让 `psh_kill` 可用」。查代码才发现，
+  那条注释描述的机制**从未被实现**：
+  - 注释说提权进程会通过脚本块日志收到信号自杀。但 `ELEVATED_SCRIPT` 里没有任何地方
+    读日志、也没有触发器。日志是**只写不读**的，它根本不能当通道。
+  - 实际实现是用 `WScript.Shell` 起一个**普通权限**的 PowerShell 去 `Stop-Process` 目标——
+    和 DSH 自己一样杀不掉提权进程。所以就算把系统策略打开，`psh_kill` 依然无效。
+  - 更糟的是，全局打开脚本块日志会把**所有** PowerShell 脚本块（包括命令行里的密码、token）
+    复制进系统事件日志。为一个不工作的机制付这个代价并不值得。
+- 真机制：两边**唯一共享的通道是 run 目录**。
+  - `ELEVATED_SCRIPT` 启动时在**后台 runspace** 里起一个监视线程，每 250 ms 看一次
+    `$RunDir\kill-request` 是否存在。放在后台 runspace 是关键——用户代码把主线程
+    `Start-Sleep 120` 卡住时，主线程根本没机会检查，而背景线程照样跑。
+  - 哨兵出现 → `[Environment]::Exit(137)`（跨 runspace 唯一能结束整个进程的出口）。
+  - `killElevatedPid(pid, { runDir })` 只做一件事：把那个文件写出来。创建文件不需要任何权限，
+    所以任意完整性级别都能用。**不需要打开任何系统策略。**
+  - 宿主结束时先 `Stop()` 掉监视线程，避免同一 runDir 重跑时被上一次的残留哨兵误杀。
+- 配套改动：
+  - `psh_elevated` 的返回**每条路径**都带 `pid` 和 `runDir`（原来只有超时分支在提示文本里提一句）。
+    真正需要杀的正是"还没返回"的那次运行，pid 离开 runDir 就无从传递信号。
+  - 超时/待 UAC 分支的提示改成可直接抄的调用：`psh_kill pid=... runDir='...'`。
+  - `psh_kill` 新增 `runDir` 参数；拿不到 runDir 时**诚实报错**而不是假装试过。
+  - `lib/policy.js` 里"用 `psh_kill`（依赖 PowerShell 脚本块日志）"改成正确描述。
+- 新增 `test/kill-sentinel-check.mjs`：跑真实的 `ELEVATED_SCRIPT`，用户代码 `Start-Sleep -Seconds 120`，
+  中途写下哨兵，断言宿主在几秒内退出、`done.txt` 不存在（被杀的运行不能声称跑完了）。
+  实测「sentinel seen -> host exited after ~2337ms」，即便 120 秒的 sleep 仍在进行。
+- 已知取舍（写在测试注释里）：输出要等整个 block 返回才收集，所以**被杀在中途的运行会丢掉
+  它已经打印的部分**。能杀掉它本身比看到它卡住前的输出更重要。
+
 ## 1.0.10 — 2026-11-08
 
 **在真宿主里跑通 `psh_job` 后当场发现的 stderr 噪声**
